@@ -25,8 +25,8 @@ module.exports = {
         sans: ['var(--font-space-noto-sans-kr)', ...fontFamily.sans],
       },
       colors: {
-        primary: colors.pink,
-        gray: colors.gray,
+        primary: colors.amber,
+        gray: colors.neutral,
       },
       typography: ({ theme }) => ({
         DEFAULT: {
@@ -46,7 +46,7 @@ module.exports = {
               fontWeight: '600',
             },
             code: {
-              color: theme('colors.indigo.500'),
+              color: theme('colors.sky.500'),
             },
           },
         },
