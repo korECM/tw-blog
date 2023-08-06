@@ -8,7 +8,6 @@ const MAX_DISPLAY = 5
 
 export default function Home({ posts }) {
   // @ts-ignore
-  // @ts-ignore
   return (
     <>
       <div className="divide-y divide-gray-200 dark:divide-gray-700">
