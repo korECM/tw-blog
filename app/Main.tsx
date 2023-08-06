@@ -7,6 +7,8 @@ import NewsletterForm from 'pliny/ui/NewsletterForm'
 const MAX_DISPLAY = 5
 
 export default function Home({ posts }) {
+  // @ts-ignore
+  // @ts-ignore
   return (
     <>
       <div className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -81,11 +83,13 @@ export default function Home({ posts }) {
           </Link>
         </div>
       )}
-      {siteMetadata.newsletter?.provider && (
-        <div className="flex items-center justify-center pt-4">
-          <NewsletterForm />
-        </div>
-      )}
+      {siteMetadata.newsletter?.provider &&
+        // @ts-ignore
+        siteMetadata.newsletter.provider != 'not_used' && (
+          <div className="flex items-center justify-center pt-4">
+            <NewsletterForm />
+          </div>
+        )}
     </>
   )
 }
