@@ -17,7 +17,7 @@ const siteMetadata = {
   // facebook: 'https://facebook.com',
   // youtube: 'https://youtube.com',
   linkedin: 'https://www.linkedin.com/in/jongwon-youn-4389a4197',
-  locale: 'ko-kr',
+  locale: 'ko_KR',
   analytics: {
     // If you want to use an analytics provider you have to add it to the
     // content security policy in the `next.config.js` file.
