@@ -3,13 +3,14 @@ import 'pliny/search/algolia.css'
 
 import { Noto_Sans_KR } from 'next/font/google'
 import { Analytics, AnalyticsConfig } from 'pliny/analytics'
-import { SearchProvider, SearchConfig } from 'pliny/search'
+import { SearchConfig, SearchProvider } from 'pliny/search'
 import Header from '@/components/Header'
 import SectionContainer from '@/components/SectionContainer'
 import Footer from '@/components/Footer'
 import siteMetadata from '@/data/siteMetadata'
 import { ThemeProviders } from './theme-providers'
 import { Metadata } from 'next'
+import Script from 'next/script'
 
 const noto_sans_kr = Noto_Sans_KR({
   subsets: ['latin'],
@@ -74,6 +75,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fff" />
       <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000" />
       <link rel="alternate" type="application/rss+xml" href="/feed.xml" />
+      <Script id="jennifer">
+        {`    (function(j,ennifer) {
+        j['dmndata']=[];j['jenniferFront']=function(args){window.dmndata.push(args)};
+        j['dmnaid']=ennifer;j['dmnatime']=new Date();j['dmnanocookie']=false;j['dmnajennifer']='JENNIFER_FRONT@INTG';
+    }(window, 'dae687a0'));`}
+      </Script>
+      <Script async={true} src="https://d-collect.jennifersoft.com/dae687a0/demian.js" />
       <body className="bg-white text-black antialiased dark:bg-gray-900 dark:text-white">
         <ThemeProviders>
           <Analytics analyticsConfig={siteMetadata.analytics as AnalyticsConfig} />
