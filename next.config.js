@@ -55,7 +55,7 @@ const securityHeaders = [
 ]
 
 /**
- * @type {import('next/dist/next-server/server/config').NextConfig}
+ * @type {import("next/dist/next-server/server/config").NextConfig}
  **/
 module.exports = () => {
   const plugins = [withContentlayer, withBundleAnalyzer]
@@ -86,6 +86,80 @@ module.exports = () => {
       })
 
       return config
+    },
+    async redirects() {
+      return [
+        {
+          source: '/ERESOLVE-unable-to-resolve-dependency-tree.mdx',
+          destination: '/blog/ERESOLVE-unable-to-resolve-dependency-tree.mdx',
+          permanent: true,
+        },
+        {
+          source: '/arrays-asList-alternative-Collections-singletonList.mdx',
+          destination: '/blog/arrays-asList-alternative-Collections-singletonList.mdx',
+          permanent: true,
+        },
+        {
+          source: '/backtick-fix.mdx',
+          destination: '/blog/backtick-fix.mdx',
+          permanent: true,
+        },
+        {
+          source: '/database-normalization-1-what-is.mdx',
+          destination: '/blog/database-normalization-1-what-is.mdx',
+          permanent: true,
+        },
+        {
+          source: '/database-normalization-2-inf.mdx',
+          destination: '/blog/database-normalization-2-inf.mdx',
+          permanent: true,
+        },
+        {
+          source: '/database-normalization-3-2nf-3nf-bcnf.mdx',
+          destination: '/blog/database-normalization-3-2nf-3nf-bcnf.mdx',
+          permanent: true,
+        },
+        {
+          source: '/delete-property-without-delete.mdx',
+          destination: '/blog/delete-property-without-delete.mdx',
+          permanent: true,
+        },
+        {
+          source: '/jvm-stack-and-register.mdx',
+          destination: '/blog/jvm-stack-and-register.mdx',
+          permanent: true,
+        },
+        {
+          source: '/lombok.mdx',
+          destination: '/blog/lombok.mdx',
+          permanent: true,
+        },
+        {
+          source: '/military.mdx',
+          destination: '/blog/military.mdx',
+          permanent: true,
+        },
+        {
+          source: '/ngrinder-ecs.mdx',
+          destination: '/blog/ngrinder-ecs.mdx',
+          permanent: true,
+        },
+        {
+          source: '/node-js-event-loop.mdx',
+          destination: '/blog/node-js-event-loop.mdx',
+          permanent: true,
+        },
+        {
+          source: '/redis-dlm.mdx',
+          destination: '/blog/redis-dlm.mdx',
+          permanent: true,
+        },
+        {
+          source: '/spring-history.mdx',
+          destination: '/blog/spring-history.mdx',
+          permanent: true,
+        },
+      ]
     },
   })
 }
