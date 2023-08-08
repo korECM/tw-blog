@@ -51,10 +51,10 @@ const siteMetadata = {
     giscusConfig: {
       // Visit the link below, and follow the steps in the 'configuration' section
       // https://giscus.app/
-      repo: 'korECM/blog',
-      repositoryId: 'MDEwOlJlcG9zaXRvcnk0MDAyMTQ3NTY=',
+      repo: 'korECM/tw-blog',
+      repositoryId: 'R_kgDOKEDg1g',
       category: 'Comments',
-      categoryId: 'DIC_kwDOF9rK5M4CYYQF',
+      categoryId: 'DIC_kwDOKEDg1s4CYbj9',
       mapping: 'pathname', // supported options: pathname, url, title
       reactions: '1', // Emoji reactions: 1 = enable / 0 = disable
       // Send discussion metadata periodically to the parent window: 1 = enable / 0 = disable
