@@ -4,9 +4,9 @@ import 'katex/dist/katex.css'
 import PageTitle from '@/components/PageTitle'
 import { components } from '@/components/MDXComponents'
 import { MDXLayoutRenderer } from 'pliny/mdx-components'
-import { sortPosts, coreContent } from 'pliny/utils/contentlayer'
-import { allBlogs, allAuthors } from 'contentlayer/generated'
+import { coreContent, sortPosts } from 'pliny/utils/contentlayer'
 import type { Authors, Blog } from 'contentlayer/generated'
+import { allAuthors, allBlogs } from 'contentlayer/generated'
 import PostSimple from '@/layouts/PostSimple'
 import PostLayout from '@/layouts/PostLayout'
 import PostBanner from '@/layouts/PostBanner'
@@ -116,9 +116,10 @@ export default async function Page({ params }: { params: { slug: string[] } }) {
         </div>
       ) : (
         <>
-          <script type="application/ld+json" suppressHydrationWarning>
-            {JSON.stringify(jsonLd)}
-          </script>
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+          />
           <Layout content={mainContent} authorDetails={authorDetails} next={next} prev={prev}>
             <MDXLayoutRenderer code={post.body.code} components={components} toc={post.toc} />
           </Layout>
