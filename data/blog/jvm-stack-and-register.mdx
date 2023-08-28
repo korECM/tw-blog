@@ -154,6 +154,7 @@ public class Example {
 우리가 다루지 않을 부분은 생략했다. 스택 위주로 살펴보자.
 
 ![img.png](/static/images/jvm-stack-and-register/frame-1.png)
+
 * `ALOAD 0`
 * 0번째 변수를 피연산자 스택에 넣는다. 0번째 메소드는 바로 `this`다. 메소드가 호출되면 프레임이 생성되면서 메시지를 받은 객체(Example의 인스턴스)가 프레임에 저장된다. `this`는 모든 인스턴스 메서드 프레임에 가장 먼저 저장되는 변수다.
 * `ICONST_0`
@@ -177,6 +178,7 @@ public class Example {
     PUTFIELD Example.lastId : I
     IRETURN
 ```
+
 ![img_2.png](/static/images/jvm-stack-and-register/frame-2.png)
 
 * `ALOAD 0`
