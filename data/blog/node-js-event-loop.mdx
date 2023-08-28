@@ -21,17 +21,25 @@ layout: PostLayout
 그러나 `Node.js`는 하나의 스레드만으로 여러 **비동기 작업**들을 블로킹 없이 수행할 수 있고 그 기반에는 **이벤트 루프**가 존재한다.
 
 ## Node.js의 구조
+
 ![1*yEW6321eqBd_-C0D7LsBQw.png](/static/images/node-js-event-loop/1*yEW6321eqBd_-C0D7LsBQw.png)
+
 **이벤트 루프**를 이해하기 위해서 `Node.js`가 어떻게 구성되어 있는지를 알아야 한다.
 `Node.js`는 `C++`로 작성된 런타임이고 그 내부에 `V8 Engine`를 가지고 있다. 그 덕분에 크롬과 같은 브라우저에서 실행하던 자바스크립트를 로컬에서 실행할 수 있다.
 그런데 그 내부에는 `V8 Engine` 말고도 `libuv `라는 라이브러리가 존재한다.
 ### libuv
+
 ![banner.png](/static/images/node-js-event-loop/banner.png)
+
 `libUV`란 `C++`로 작성된, `Node.js`가 사용하는 **비동기 I/O** 라이브러리다. 이는 사실 운영체제의 **커널**을 추상화한 Wrapping 라이브러리로 **커널**이 **어떤 비동기 API**를 지원하는지 알고있다.
+
 ![libuv-커널.png](/static/images/node-js-event-loop/libuv-커널.png)
+
 다시 말해 우리가 `libuv `에게 파일 읽기와 같은 **비동기 작업**을 요청하면 `libuv`는 이 작업을 커널이 지원하는지 확인한다. 만약 지원한다면 `libuv`가 대신 **커널**에게 **비동기적**으로 요청했다가 응답이 오면 그 응답을 우리에게 전달해준다.
 만약 요청한 작업을 **커널**이 지원하지 않는다면 어떻게 할까? 바로 자신만의 **워커 스레드**가 담긴 스레드 풀을 사용한다.
-![A434392B-912E-49FF-A24B-EF9131E63B0A.png](/static/images/node-js-event-loop/A434392B-912E-49FF-A24B-EF9131E63B0A.png)
+
+![A434392B-912E-49FF-A24B-EF9131E63B0A.png](/static/images/node-js-event-loop/threads.png)
+
 > 실제로 `node`를 실행하면 그 아래의 여러 개의 `node` 스레드가 존재하는 것을 확인할 수 있다.
 
 ![libuv-워커-스레드-1.png](/static/images/node-js-event-loop/libuv-워커-스레드-1.png)
@@ -39,6 +47,7 @@ layout: PostLayout
 `libuv`는 기본적으로 4개의 스레드를 가지는 **스레드 풀**을 생성한다. 물론 `uv_threadpool`라는 환경 변수를 설정해 **최대 128개**까지 스레드 개수를 늘릴 수도 있다. 만약 우리가 요청한 작업을 **커널**이 지원하지 않는다면 `libuv`는 커널을 호출하는 대신 이 스레드 풀에게 작업을 맡겨버린다.
 
 ![libuv-워커-스레드-2.png](/static/images/node-js-event-loop/libuv-워커-스레드-2.png)
+
 그리고 스레드 풀에 있던 스레드가 작업을 완료하면 `libuv`가 우리에게 요청한 작업이 완료되었다고 친절하게 알려준다.
 
 즉, 정리하면 다음과 같다.
@@ -53,7 +62,9 @@ layout: PostLayout
 `Node.js`는 **I/O 작업**을 자신의 **메인 스레드**가 아닌 **다른 스레드**에 위임함으로써 싱글 스레드로 **논 블로킹 I/O**를 지원한다.
 다르게 말하면 `Node.js`는 **I/O 작업**을 `libuv`에게 위임함으로써 **논 블로킹 I/O**를 지원하고 그 기반에는 **이벤트 루프**가 있다.
 ## Nods.js 속 이벤트 루프
+
 ![event-loop.png](/static/images/node-js-event-loop/event-loop.png)
+
 **이벤트 루프**는 `Node.js`가 여러 **비동기 작업**을 관리하기 위한 구현체다. `console.log("Hello World")`와 같은 동기 작업이 아니라 `file.readFile('test.txt', callback)`과 같은 **비동기 작업**들을 모아서 관리하고 순서대로 실행할 수 있게 해주는 도구이며 위와 같이 구성되어있다.
 
 우선 점선으로 된 `nextTickQueue`와 `microTaskQueue`는 **이벤트 루프**의 일부가 아니다. 따라서 아래에서 설명하는 내용에 해당되지 않는다. 비록 이벤트 루프를 구성하지는 않지만 `Node.js`의 비동기 작업 관리를 도와주는 것들로 아래에서 더 자세하게 다룬다.
@@ -170,6 +181,7 @@ db.query("SELECT * FROM EVENT_LOOP", F1);
     * `SELECT * FROM SPRING_BOOT`라는 새로운 쿼리를 날린다
 
 ![Node.js-Event-Loop-Execute-Callback-3.png](/static/images/node-js-event-loop/Node.js-Event-Loop-Execute-Callback-3.png)
+
 * `Q`에서 `F1`를 꺼내서 실행한다.
     * 콘솔에 쿼리 결과를 출력하기 전에 `SELECT * FROM SPRING_BOOT`의 응답이 와서 `F2` 콜백을 `Q`에 추가한다
     * 콘솔에 `SELECT * FROM EVENT_LOOP` 결과를 출력한다.
@@ -212,12 +224,19 @@ db.query("SELECT * FROM EVENT_LOOP", F1);
 console.log("Hello Wrold");
 ```
 ![Event-Loop-Flow-Explain-1.png](/static/images/node-js-event-loop/Event-Loop-Flow-Explain-1.png)
+
 `node test.js`를 실행하면 `Node.js`는 우선 **이벤트 루프**를 생성한다.
+
 ![Event-Loop-Flow-Explain-2.png](/static/images/node-js-event-loop/Event-Loop-Flow-Explain-2.png)
+
 생성한 **이벤트 루프**에 진입하지 않고 **이벤트 루프 바깥**에서 `test.js`를 처음부터 끝까지 차례대로 실행한다. 다시 말해 이벤트 루프를 만들어 놓고 `Timer Phase`에 진입하기 전에 `test.js`를 처음부터 끝까지 실행한다. 위 코드에서는 `Hello World`라는 문자열이 출력된다.
+
 ![Event-Loop-Flow-Explain-3.png](/static/images/node-js-event-loop/Event-Loop-Flow-Explain-3.png)
+
 `test.js`를 처음부터 끝까지 실행했으므로 **이벤트 루프**가 살아있는지 확인한다. 다시 말해 **이벤트 루프**에 남아있는 작업이 있는지 확인한다. `test.js`의 경우 그 어떤 비동기 호출도 하지 않았으므로 **이벤트 루프**에는 남아있는 작업이 없다.
+
 ![Event-Loop-Flow-Explain-4.png](/static/images/node-js-event-loop/Event-Loop-Flow-Explain-4.png)
+
 따라서 `process.on('exit')`의 콜백을 실행하고 이벤트 루프를 종료한 뒤에 프로그램을 종료한다.
 반대로 비동기 작업이 있는 코드를 생각해보자.
 ```javascript
@@ -226,19 +245,33 @@ setTimeout(() => console.log("Async Hello World"), 1000);
 console.log("Hello World");
 ```
 위 코드에는 `setTimeout`이라는 비동기 작업이 추가되었다. 뒤에서 더 자세하게 이야기하지만 `setTImeout`의 비동기 작업은 `Timer Phase`가 관리한다.
+
 ![Event-Loop-Flow-Explain-1-2.png](/static/images/node-js-event-loop/Event-Loop-Flow-Explain-1-2.png)
+
 `node test.js`를 실행하면 `Node.js`는 우선 **이벤트 루프**를 생성한다.
+
 ![Event-Loop-Flow-Explain-10.png](/static/images/node-js-event-loop/Event-Loop-Flow-Explain-10.png)
+
 생성한 **이벤트 루프**에 진입하지 않고 **이벤트 루프 바깥**에서 `test.js`를 처음부터 끝까지 차례대로 실행한다. 다시 말해 이벤트 루프를 만들어 놓고 `Timer Phase`에 진입하기 전에 `test.js`를 처음부터 끝까지 실행한다. 우선 `setTimeout`이 호출되면서 `Timer Phase`에 `Async Hello World`라는 문자열을 1초 뒤에 출력하는 콜백을 `Timer Phase`에 등록한다. 그리고 `Hello World`라는 문자열을 출력한다.
+
 ![Event-Loop-Flow-Explain-3-2.png](/static/images/node-js-event-loop/Event-Loop-Flow-Explain-3-2.png)
+
 `test.js`를 처음부터 끝까지 실행했으므로 **이벤트 루프**가 살아있는지 확인한다. 다시 말해 **이벤트 루프**에 남아있는 작업이 있는지 확인한다. `test.js`의 경우 `setTimeout`으로 `Timer Phase`에 등록한 작업이 있으므로 **이벤트 루프**에 진입한다.
+
 ![Event-Loop-Flow-Explain-5.png](/static/images/node-js-event-loop/Event-Loop-Flow-Explain-5.png)
+
 먼저 **이벤트 루프**의 `Timer Phase`에 진입한다. `Node.js`는 `Timer Phase`가 관리하는 **타이머**들을 살펴보면서 **실행할 준비**가 되었는지 확인한다. 우리는 1초 뒤에 `Async Hello World`라는 문자열을 출력하기로 했으므로 아직 실행할 준비가 안 되었다고 하자. 실행할 수 있는 작업이 없으므로 `Node.js`는 다음 페이즈로 이동한다.
+
 ![Event-Loop-Flow-Explain-6.png](/static/images/node-js-event-loop/Event-Loop-Flow-Explain-6.png)
+
 `Node.js`는 `Timer Phase`를 지나 `Pending Callbacks Phase`, `Idle, Prepare Phase`, `Poll Phase`, `Check Phase`, `Close Callbacks Phase`를 차례대로 방문한다. 이 페이즈들에서도 실행할 수 있는 작업이 없으므로 `Node.js`는 `Loop Alive`까지 아무런 작업 없이 도달한다.
+
 ![Event-Loop-Flow-Explain-7.png](/static/images/node-js-event-loop/Event-Loop-Flow-Explain-7.png)
+
 다시 한 번 **이벤트 루프**가 살아있는지 확인한다. 1초가 지나지 않아 **실행할 수 있는 작업**은 없지만 **아직 실행하지 못한 작업**이 있으므로 이벤트 루프는 살아있다. 따라서 다시 `Timer Phase`로 진입한다.
+
 ![Event-Loop-Flow-Explain-8.png](/static/images/node-js-event-loop/Event-Loop-Flow-Explain-8.png)
+
 `Node.js`가 이벤트 루프를 열심히 돌다가 1초가 지나 이전에 `setTimeout`으로 등록해뒀던 콜백이 이제 실행할 준비가 되었다. `Node.js`는 `Timer Phase`가 관리하는 큐에서 콜백을 꺼내서 실행한다. 그 결과로 `Async Hello World`가 출력된다. `Timer Phase`에는 더이상 남아있는 작업이 없으므로 다음 페이즈로 이동한다.
 > 실제로 위와 같은 상황에서 `Node.js`는 1초가 지날 때까지 이벤트 루프를 무한 반복 하지 않는다. 실제로는 `Poll Phase`에서 **이벤트 루프**를 반복해도 실행할 수 있는 작업이 없는 것을 인지하고 1초가 지나 `setTimeout` 콜백을 실행할 수 있을 때까지 대기한다. 1초가 지나 타이머의 콜백을 실행할 수 있게 되면 그제서야 다음 페이즈로 이동한다. 자세한 내용은 `Poll Phase`에서 살펴보자
 
@@ -285,11 +318,15 @@ console.log("Hello World");
 현재 시간을 `now`라고 하자. `setTimeout(fn, delay)`가 실행되면 `Node.js`는 타이머를 `min-heap`에 저장한다. 이때 `setTimeout`을 호출한 시간을 `registeredTime`이라고 하자.
 
 `Node.js`가 `Timer Phase`에 진입하면 `min-heap`에서 타이머를 하나 꺼낸다. 그리고 그 타이머에 대해서 `now - registeredTime >= delay` 조건을 검사한다. 만약 만족한다면 타이머를 실행할 준비가 되었으므로 타이머의 **콜백**을 실행한다. 그리고 다시 `min-heap`에서 타이머를 꺼내서 검사한다. 만약 조건이 성립하지 않는다면 남은 타이머들을 검사하지 않고 **다음 페이즈**로 넘어간다. 그 이유는 `min-heap`이 타이머를 **오름차순**으로 관리해 검사할 필요가 없기 때문이다.
+
 ![Timer-1.png](/static/images/node-js-event-loop/Timer-1.png)
+
 그림으로 다시 살펴보자. `Node.js`가 `Timer Phase`에 진입하면 `heap`으로부터 **가장 이른 타이머**를 요청한다. `min-heap`은 `O(1)`로 **가장 이른 타이머**를 반환한다. 위 예시에서는 타이머 B가 된다.
 
 타이머 B를 받은 `Node.js`는 타이머를 **현재 실행할 수 있는지** 확인한다. `now(18) - registeredTime(10) >= delay(5)`이므로 타이머를 실행할 수 있다. 따라서 `Node.js`는 `Heap`에서 타이머 B를 제거하고 타이머 B와 연결된 **콜백**을 실행한다.
+
 ![Timer-2.png](/static/images/node-js-event-loop/Timer-2.png)
+
 이어서 `Node.js`는 다시 `Heap`에게 **가장 이른 타이머**를 요청한다. 이번에는 `registeredTime + delay`가 가장 작은 타이머 A를 반환한다.
 
 타이머 A를 받은 `Node.js`는 타이머를 **현재 실행할 수 있는지** 확인한다. `now(18) - registeredTime(20) >= delay(5)`가 성립하지 않으므로 타이머를 실행할 수 없다. 따라서 `Node.js`틑 타이머 A를 실행하지 않는다. **가장 이른 타이머**를 실행할 수 없으므로 `Heap`에 존재하는 모든 타이머를 실행할 수 없음이 당연하다. 따라서 `Node.js`는 `Heap`에게 더이상 타이머를 요청하지 않고 다음 페이즈로 넘어간다. 이는 `min-heap` 특성 덕분이다.
@@ -306,7 +343,9 @@ const E = setTimeout(fn, 3000);
 ```
 
 그렇다면 타이머는 `min-heap`에 아래와 저장되어있다고 생각할 수 있다. 실제는 **이진 트리 구조**를 가져야 하지만 편의를 위해 단순히 **오름차순**으로 정렬되어있다고 해보자.
+
 ![timers.png](/static/images/node-js-event-loop/timers.png)
+
 * 모든 타이머를 검사할 필요가 없는 경우
 
 먼저 `Node.js`가 `Timer Phase`에 `30`에 진입했다고 해보자. `Node.js`는 먼저 `min-heap`에서 `A`를 꺼내서 검사한다. `A`의 `delay`는 `50`으로 `now(30) - registeredTime(0) >= delay(50)`이 성립하지 않으므로 `A`의 콜백을 실행하지 않는다. 이때 `Node.js`는 **오름차순**의 특성덕분에 뒤에있는 `B`, `C`, `D`, `E`를 검사할 필요가 없다. `A`를 실행할 수 없다면 뒤에 있는 타이머들은 당연히 실행할 수 없기 때문이다. 따라서 `Node.js`는 다음 페이즈로 넘어간다.
