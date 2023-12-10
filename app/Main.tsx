@@ -58,7 +58,7 @@ export default function Home({ posts }) {
                         <Link
                           href={`/blog/${slug}`}
                           className="text-primary-600 hover:text-primary-600 dark:text-primary-500 dark:hover:text-primary-400"
-                          aria-label={`Read "${title}"`}
+                          aria-label={`Read more:"${title}"`}
                         >
                           Read more &rarr;
                         </Link>
