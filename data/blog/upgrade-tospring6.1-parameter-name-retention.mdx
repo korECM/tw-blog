@@ -1,0 +1,386 @@
+---
+title: 'Spring 6.1에서 변경된 Parameter Name Retention'
+date: 2023-12-10T02:00:00Z
+lastmod: '2023-12-10'
+tags: ['Spring', 'Spring Boot']
+draft: false
+summary: 'Spring 6.1에서 변경된 Parameter Name Retention에 대해서 알아보고 어떻게 대처할 수 있는지 살펴봅니다'
+layout: PostLayout
+---
+
+<TOCInline toc={props.toc} toHeading={2} />
+
+## Upgrading to Spring Framework 6.x
+작년(2022년) 11월 22일에 Spring Framework의 6.0 GA 버전이 발표되었다. 최소 자바 버전이 17로 올라가고 Virtual Thread를 지원하기 시작했으며 GraalVM native images 또한 GA로 지원하기 시작했다.
+
+Spring Framework의 메이저 버전이 올라가는 큰 변경이다 보니 기존 프로젝트의 Spring 버전을 올리기 위해서는 마이그레이션 작업을 진행해야 하지만, 보다 편하게 마이그레이션을 할 수 있도록 Spring 팀은 [마이그레이션 가이드 문서](https://github.com/spring-projects/spring-framework/wiki/Upgrading-to-Spring-Framework-6.x)를 제공하고 있다.
+
+그중 흥미로웠던 부분 중 하나가 바로 `Parameter Name Retention`에 대한 내용이었다. Spring Boot 3버전 대로 새로운 프로젝트를 시도하면서 이로 인한 문제를 겪었고, 다른 사람들도 이와 비슷한 문제를 겪을 것으로 생각되어 이 글을 작성하게 되었다.
+
+## 데모 프로젝트
+Spring은 파라미터의 이름을 여러 곳에서 활용하고 있지만 가장 간단하게 확인할 수 있는 방법이 `@RequestParam`이기 때문에 이를 택했다. `Spring Data JPA`의 `@Query` 어노테이션처럼 다른 방법을 택해도 비슷한 문제를 확인할 수 있다.
+
+Spring Framework 6.1 버전 이상을 사용하는 프로젝트를 생성하고, `@RequestParam`을 사용하는 컨트롤러를 작성해 무엇이 바뀌었는지 확인해 보려고 한다. 이 글을 작성하는 시점에는 Spring Boot 3.2.0 버전이 최신이기 때문에 **Spring Boot 3.2.0** 버전을 사용하는 프로젝트를 생성했다.
+
+이 코드는 [여기](https://github.com/korECM/BlogSampleProjects/tree/main/spring-parameter-name-retention-demo)에서 확인할 수 있다.
+
+결과적으로 프로젝트의 `build.gradle` 파일은 다음과 같다.
+
+```groovy
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.2.0'
+    id 'io.spring.dependency-management' version '1.1.4'
+}
+
+group = 'korecm'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    sourceCompatibility = '17'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+```
+
+그리고 간단하게 `@RequestParam`을 사용해 사용자로부터 이름을 받아 인사를 건네는 컨트롤러를 작성한다.
+
+```java
+@RestController
+public class HelloController {
+
+    @GetMapping("/hello")
+    public String hello(@RequestParam String name) {
+        return "Hello, " + name;
+    }
+}
+```
+
+그리고 테스트를 위한 `.http` 파일을 하나 만든다. IDE에서 편하게 확인하기 위해서 `.http` 파일을 사용했지만 `Postman`과 같은 툴을 사용해도 무방하다.
+
+```http request
+### 인사 건네기
+GET http://localhost:8080/hello?name=홍길동
+```
+
+### Gradle을 이용한 빌드 및 실행
+우선, 평소와 다르게 `Gradle`을 이용해서 데모 애플리케이션을 실행해서 위에서 만든 API가 잘 작동하는지 확인해 보려 한다.
+
+`gradle`을 이용해서 스프링 애플리케이션을 실행한다.
+
+```bash
+$ ./gradlew bootRun
+```
+
+그리고 `.http` 파일을 열어서 요청을 보내면 아래와 같이 정상적으로 응답이 오는 것을 확인할 수 있다.
+![](/static/images/upgrade-tospring6.1-parameter-name-retention/upgrade-tospring6.1-parameter-name-retention-1702198806043.png)
+
+### IntelliJ IDEA를 이용한 빌드 및 실행
+반대로 이번에는 `Gradle`을 사용하지 않고 `IntelliJ IDEA`를 이용해서 애플리케이션을 실행해 보려 한다.
+우선 `Gradle`이 생성한 빌드 결과물을 제거해준다.
+
+```bash
+./gradlew clean 
+```
+
+그리고 IDE를 사용해서 빌드를 수행하기 위해서는 프로젝트의 빌드 설정을 조금 수정해야 한다.
+
+IDE의 설정에서 `Build, Execution, Deployment > Build Tools > Gradle`에서 `Build and run using`과 `Run tests using`을 기본 설정인 `Gradle`에서 `IntelliJ IDEA`로 변경한다.
+
+![](/static/images/upgrade-tospring6.1-parameter-name-retention/upgrade-tospring6.1-parameter-name-retention-1702198878029.png)
+
+그리고 `Intellij`를 이용해 애플리케이션을 실행하고 똑같이 `.http` 파일을 이용해 요청을 보내보면 아래와 같이 `500 Internal Server Error`가 발생하는 것을 확인할 수 있다.
+
+![](/static/images/upgrade-tospring6.1-parameter-name-retention/upgrade-tospring6.1-parameter-name-retention-1702199027931.png)
+
+그리고 애플리케이션에서는 다음과 같은 예외가 발생한 것을 알 수 있다.
+```bash
+java.lang.IllegalArgumentException: Name for argument of type [java.lang.String] not specified, and parameter name information not found in class file either.
+	at jakarta.servlet.http.HttpServlet.service(HttpServlet.java:564) ~[tomcat-embed-core-10.1.16.jar:6.0]
+	at jakarta.servlet.http.HttpServlet.service(HttpServlet.java:658) ~[tomcat-embed-core-10.1.16.jar:6.0]
+```
+
+위 에러 내용은 간단하다. `java.lang.String` 타입의 인자에 대한 이름이 지정되지 않았고 클래스 파일에서도 파라미터 이름 정보를 찾을 수 없다는 것이다. 
+
+다시 말해 우리가 `@RequestParam`으로 받고자 하는 인자의 이름을 알 수 없어 예외가 던져졌다. 따라서 해당 에러는 `@RequestParam` 어노테이션에 해당 파라미터의 이름을 지정해 주면 해결할 수 있다.
+
+```java
+@RestController
+public class HelloController {
+
+    @GetMapping("/hello")
+    public String hello(@RequestParam("name") String name) {
+        return "Hello, " + name;
+    }
+}
+```
+
+이렇게 코드를 수정하고 다시 IDE를 사용해 애플리케이션을 실행해 테스트해보면 정상적으로 응답을 받을 수 있다.
+
+![](/static/images/upgrade-tospring6.1-parameter-name-retention/upgrade-tospring6.1-parameter-name-retention-1702199272322.png)
+
+### @RequestParam
+
+물론 `@RequestParam`의 인자에 모든 속성의 이름을 지정해 이 문제를 해결할 수 있다. 하지만 무언가 이상하다. 분명 `Java` 코드의 파라미터 이름과 받고자 하는 속성의 이름이 같은 경우 이를 생략할 수 있다고 알고 있었는데 말이다.
+
+Spring 6.1 버전에서도 여전히 `@ReuqestParam`의 이름 속성을 생략하면 `Java` 코드의 파라미터 이름으로부터 이름을 가져온다. 위에서 발생한 예외도 잘 살펴보면 이름이 지정되지 않아서 발생한 것이 아니다. 이름이 지정되지 않아 다른 곳에서 이름을 가져오려고 했지만 불가능했기에 예외가 던져진 것이다.
+
+다만 Spring 6.1 버전부터 문제가 생기는 이유는 Spring이 `Java` 코드로부터 파라미터의 이름을 가져오는 방법이 바뀌었기 때문이다. 그리고 이 부분을 이 글에서 다뤄보려고 한다.
+
+## IDE가 우리의 코드를 빌드하는 방법
+
+그렇다면 기존에 Spring은 파라미터의 이름을 어떻게 가져올 수 있었을까? 아마 `-parameters` 옵션을 떠올릴 수 있을 것이다. 그럼 더 이상 Spring은 `-parameters` 옵션을 줘도 `Java` 코드에서 파라미터의 이름을 가져올 수 없는 걸까? 혹은 IDE가 Spring 6.1 버전부터 `-parameters` 옵션을 자동으로 넣어주지 않는 걸까? 무언가 이상하다.
+
+이러한 궁금증을 해결하기 위해서 기존에 IDE가 어떻게 우리의 코드를 컴파일하고 있었는지부터 알아보자. IDE는 우리와 다르게 `javac` 커맨드를 사용해서 컴파일을 수행하지 않는다. 대신 IDE는 `Java`의 컴파일 API를 직접 호출한다. 따라서 IDE가 어떤 커맨드를 통해 `Java` 코드를 컴파일하는지는 확인할 수 없다.
+
+대신 IDE는 빌드 과정에서 `build.log`에 로그를 남긴다. 이 로그를 통해 IDE가 어떻게 우리의 코드를 컴파일하는지 확인할 수 있다.
+
+![](/static/images/upgrade-tospring6.1-parameter-name-retention/upgrade-tospring6.1-parameter-name-retention-1702209691885.png)
+
+IDE의 `Help` 메뉴에서 `Show Log in Finder`를 누르면 IDE가 어디에 로그를 저장하는지 알 수 있다.
+
+![PixelSnap 2023-12-10 at 21.02.11@2x.png](/static/images/upgrade-tospring6.1-parameter-name-retention/upgrade-tospring6.1-parameter-name-retention-1702209740612.png)
+
+IDE는 기본적으로 빌드 과정에서 기본적인 로그만 남긴다. 우리가 원하는 정보를 얻기 위해서는 IDE가 더 자세하게 빌드 로그를 남기도록 설정할 필요가 있고 `build-log-jul.properties` 파일에서 이를 설정할 수 있다.
+
+```
+# To configure logging level for certain log category use the following syntax:
+# <log-category-name>.level={FINER|INFO}
+# Example:
+#org.jetbrains.jps.level=FINER
+#\#org.jetbrains.jps.level=FINER
+```
+
+이 파일을 열어보면 `org.jetbrains.jps.level`에 대한 설정이 주석처리 되어있는데 이를 해제해 `FINER`한 로그를 남기도록 설정하면 된다.
+
+IDE를 먼저 종료하고, 해당 파일을 아래와 같이 수정한 뒤 다시 IDE를 열고 프로젝트를 빌드한다.
+
+```
+# To configure logging level for certain log category use the following syntax:
+# <log-category-name>.level={FINER|INFO}
+# Example:
+#org.jetbrains.jps.level=FINER
+\#org.jetbrains.jps.level=FINER
+```
+
+그리고 같은 위치에 있는 `build.log` 파일을 확인해보면 IDE가 수행한 빌드에 대한 로그를 확인할 수 있다. 매우 많은 로그가 나오는데, 중간에 잘 살펴보면 다음과 같은 로그를 확인할 수 있다.
+
+```
+2023-12-10 20:46:16,912 [    663]   FINE - #o.j.j.i.j.JavaBuilder - Compiling chunk [spring-parameter-name-retention-demo.main] with options: "-g -deprecation -encoding UTF-8 -source 17 -target 17 -proc:none", mode=in-process
+```
+
+이 로그를 통해 IDE가 우리의 코드를 컴파일할 때 어떠한 옵션을 사용하고 있는지 확인할 수 있다. 우리가 주목해야 할 부분은 2가지다. `-parameters` 옵션이 없다는 것과 `-g` 옵션을 지정하고 있다는 것이다.
+
+![](/static/images/upgrade-tospring6.1-parameter-name-retention/upgrade-tospring6.1-parameter-name-retention-1702211211180.png)
+
+이에 대한 내용은 사실 IDE의 `Java Compiler` 설정에서 확인할 수 있다. `Generate debugging info` 옵션이 기본적으로 체크되어있는 것을 알 수 있다.
+
+##  Java 코드를 Debug 정보와 함께 빌드하기
+
+`-g` 옵션은 빌드 결과물에 디버깅 정보를 포함하도록 하는 옵션이다. 자바 코드를 컴파일하면 기본적으로는 라인 넘버와 소스 파일의 기본적인 정보만 남아있게 된다. 이 정도로도 런타임에 예외가 발생한 경우 정보를 간단하게 얻을 수 있지만 개발 과정에서는 아무래도 더 자세한 정보가 필요하고, 이를 위해 `-g` 옵션을 지정할 수 있다..
+
+`javac` 컴파일러는 `-g` 옵션을 사용하면 지역 변수에 대한 디버깅 정보도 빌드 결과물에 저장한다. 따라서 지역 변수에 대한 이름도 빌드 결과물에 남아있게 된다. 파라미터도 일종의 지역 변수이므로 결과적으로 빌드 결과물에 메서드 파라미터의 이름이 보존된다.
+
+예를 들어 아래와 같은 `Java` 코드가 있다고 해보자.
+
+```java
+// Test.java
+
+public class Test {
+    private String myStr;
+
+    public Test (String s) {
+     this.myStr = s;
+    }
+
+    public void print () {
+     System.out.println(myStr);
+    }
+
+    public static void main (String[] args) {
+     Test test = new Test("test");
+     test.print();
+    }
+ }
+```
+
+위 코드를 그냥 컴파일하면 아래와 같은 결과물이 남는다.
+
+```bash
+$ javac Test.java
+$ javap -l Test
+
+Compiled from "Test.java"
+public class Test {
+  public Test(java.lang.String);
+    LineNumberTable:
+      line 4: 0
+      line 5: 4
+      line 6: 9
+
+  public void print();
+    LineNumberTable:
+      line 9: 0
+      line 10: 10
+
+  public static void main(java.lang.String[]);
+    LineNumberTable:
+      line 13: 0
+      line 14: 10
+      line 15: 14
+}
+```
+
+타입에 대한 정보나 Line Number 정보만 남아있는 것을 확인할 수 있다.
+
+컴파일할 때 `-g` 옵션을 지정하면 다음과 같은 결과물을 얻을 수 있다.
+
+```bash
+$ javac -g Test.java
+$ javap -l Test
+
+Compiled from "Test.java"
+public class Test {
+  public Test(java.lang.String);
+    LineNumberTable:
+      line 4: 0
+      line 5: 4
+      line 6: 9
+    LocalVariableTable:
+      Start  Length  Slot  Name   Signature
+          0      10     0  this   LTest;
+          0      10     1     s   Ljava/lang/String;
+
+  public void print();
+    LineNumberTable:
+      line 9: 0
+      line 10: 10
+    LocalVariableTable:
+      Start  Length  Slot  Name   Signature
+          0      11     0  this   LTest;
+
+  public static void main(java.lang.String[]);
+    LineNumberTable:
+      line 13: 0
+      line 14: 10
+      line 15: 14
+    LocalVariableTable:
+      Start  Length  Slot  Name   Signature
+          0      15     0  args   [Ljava/lang/String;
+         10       5     1  test   LTest;
+}
+```
+
+`LocalVariableTable`이라는 곳에 메서드 파라미터의 이름도 함께 남아있는 것을 확인할 수 있다. `LocalVariableTable`이라는 이름을 기억해 두자.
+
+
+## Spring이 파라미터의 이름을 가져오는 방법
+그렇다면 Spring 6.1 버전 이전이든 이후든 IDE는 `-g` 옵션을 사용해 메서드 파라미터의 이름을 빌드 결과물에 남기고 있었는데 왜 Spring 6.1버전부터 문제가 생긴 걸까? `Gradle`을 사용해 애플리케이션을 실행하면 왜 여전히 잘 동작하는 것일까? 이를 알기 위해서는 기존에 Spring이 파라미터의 이름을 어떻게 가져오고 있었는지 살펴봐야 한다.
+
+
+```java
+public interface ParameterNameDiscoverer {
+	String[] getParameterNames(Method method);
+
+	String[] getParameterNames(Constructor<?> ctor);
+}
+```
+
+Spring Core에는 `ParameterNameDiscoverer`라는 인터페이스가 존재한다. 메서드로부터 파라미터의 이름을 가져오는 기능을 가진 인터페이스다. 이에 대한 구현체는 여러 가지 존재하지만 여기서는 2가지만 확인해 보자.
+
+### StandardReflectionParameterNameDiscoverer
+```java
+public class StandardReflectionParameterNameDiscoverer implements ParameterNameDiscoverer { }
+```
+
+이 구현체는 JDK의 `Reflection` 기능을 활용해서 메서드 파라미터의 이름을 가져오는 구현체다. `Reflection` 기능을 사용하기 때문에 컴파일러의 `-parameters` 플래그에 의존한다.
+
+즉, 우리가 컴파일 과정에 `-parameters` 옵션을 지정해 주면 `StandardReflectionParameterNameDiscoverer`는 JDK의 `Reflection` 기능을 활용해 메서드 파라미터의 이름을 가져올 수 있다.
+
+### LocalVariableTableParameterNameDiscover
+```java
+public class LocalVariableTableParameterNameDiscoverer implements ParameterNameDiscoverer { }
+```
+이 구현체는 이름에서 알 수 있듯이 우리가 위에서 살펴본 `LocalVariableTable`로부터 메서드 파라미터 이름을 가져올 수 있다. 해당 구현체의 Javadoc을 살펴보면 아래와 같다.
+
+```
+Implementation of ParameterNameDiscoverer that uses the LocalVariableTable information in the method attributes to discover parameter names. 
+
+Returns null if the class file was compiled without debug information.
+
+Uses ObjectWeb's ASM library for analyzing class files. Each discoverer instance caches the ASM discovered information for each introspected Class, in a thread-safe manner. 
+
+It is recommended to reuse ParameterNameDiscoverer instances as far as possible.
+```
+
+우리가 예상한 대로 `LocalVariableTable`로부터 메서드 파라미터의 이름을 가져오는 구현체다. `StandardReflectionParameterNameDiscoverer`와 달리 컴파일러의 `-g` 옵션에 의존하고 있다. 그리고 마지막 줄에서 가능하면 `ParameterNameDiscoverer`를 재사용하는 것을 권장한다는 것을 알 수 있다.
+
+### 정리
+즉, Spring은 기존에 크게 2가지 방법을 사용해 `Java` 코드의 파라미터 이름을 가져오고 있었다. 
+
+`StandardReflectionParameterNameDiscoverer` 구현체는 JDK의 `Reflection` 기능을 사용해 메서드 파라미터 이름을 가져오며 컴파일러의 `-parameters` 옵션에 의존한다.
+
+`LocalVariableTableParameterNameDiscoverer` 구현체는 `LocalVariableTable`로부터 메서드 파라미터의 이름을 가져오며 컴파일러의 `-g` 옵션에 의존한다.
+
+## LocalVariableTableParameterNameDiscoverer has been removed
+하지만 Spring 6.1 버전에서 `LocalVariableTableParameterNameDiscoverer`는 제거되었다. 그에 대한 내용은 [관련 이슈](https://github.com/spring-projects/spring-framework/pull/29531#issuecomment-1321797236)에서 확인할 수 있다.
+
+정확히 어떤 흐름에서 저런 이슈가 등장한 것인지는 모르지만 아마 Spring이 Native 지원을 확대하는 과정에서 나온 것으로 생각된다. 
+
+기존의 JVM에서 Spring을 실행하는 것과 달리 Native로 실행하면 다양한 제약이 생겨난다. 이러한 제약을 극복하기 위해서 Spring Native는 다양한 방법으로 이를 해결하고 있지만 여전히 지원되지 않는 기능들도 존재한다. 이러한 것들을 극복하기 위해서 Spring 프레임워크도 Native Image와 호환성을 높이는 방향으로 나아가고 있고, 그 과정에서 내려진 결정으로 보인다.
+
+## 해결방법
+사실 처음 데모 프로젝트에서 살펴봤던 것처럼 이 문제는 IDE에서 빌드하는 경우에만 발생한다. IDE에서 문제가 발생하는 이유는 IDE는 `-parameters` 옵션이 아니라 `-g` 옵션만을 사용해서 빌드를 수행하고 Spring 6.1 버전부터는 `LocalVariableTableParameterNameDiscoverer`가 제거되었기 때문이란 것도 살펴보았다.
+
+그렇다면 Gradle을 이용해서 빌드를 수행하면 왜 문제가 발생하지 않았을까? 이는 Spring Boot의 Gradle Plugin 덕분이다.
+
+### Gradle이 Spring 프로젝트를 빌드하는 방법
+
+```groovy
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.2.0'
+    id 'io.spring.dependency-management' version '1.1.4'
+}
+```
+우리는 Gradle을 사용해서 Spring 프로젝트를 구성하면 위와 같이 `org.springframework.boot`라는 플러그인과 `java` 플러그인을 함께 사용한다. 이 플러그인의 [공식 문서](https://docs.spring.io/spring-boot/docs/3.2.0/gradle-plugin/reference/htmlsingle/#reacting-to-other-plugins.java)를 살펴보면 다음 내용을 확인할 수 있다.
+
+When Gradle’s [`java` plugin](https://docs.gradle.org/current/userguide/java_plugin.html) is applied to a project, the Spring Boot plugin:
+12. Configures any `JavaCompile` tasks to use the `-parameters` compiler argument.
+
+즉, 위와 같이 프로젝트를 구성하면 `Gradle`이 우리의 프로젝트를 수행할 때 `-parameters` 옵션을 자동으로 적용한다. 이 덕분에 별다른 설정을 하지 않아도 `Gradle`을 사용해서 프로젝트를 빌드하면 문제가 생기지 않았다. 관련 코드는 [다음](https://github.com/spring-projects/spring-boot/blob/e6970243eeddc13fd54bb8afd5c9c1e8bec1ad13/spring-boot-project/spring-boot-tools/spring-boot-gradle-plugin/src/main/java/org/springframework/boot/gradle/plugin/JavaPluginAction.java#L62)에서 확인할 수 있다.
+
+따라서 위와 같이 플러그인을 구성했다면 공식 문서의 안내와는 달리 아래 설정을 추가할 필요가 없다.
+
+```groovy
+tasks.withType<JavaCompile>(){
+    options.compilerArgs.add("-parameters")
+}
+```
+
+### IDE에서 해결하는 방법
+IDE에서 해결하는 방법도 간단하다. 설정에서 컴파일 할 때 옵션으로 `-parameters` 옵션을 추가해주면 된다.
+
+![](/static/images/upgrade-tospring6.1-parameter-name-retention/upgrade-tospring6.1-parameter-name-retention-1702214570194.png)
+
+`Build, Execution, Deployment > Compiler > Java Compiler`에서 `Additional command lines parameters`에 `-parameters` 추가해주면 된다.
+
+이렇게 수정하고 다시 IDE를 이용해서 애플리케이션을 실행하면 메서드 파라미터의 이름을 잘 가져오는 것을 확인할 수 있다.
+
+## 결론
+Spring 6.1 버전부터는 IDE를 사용해서 스프링 애플리케이션을 실행하면 메서드 파라미터의 이름을 가져오지 못한다. 이런 문제가 왜 생기는지 알기 위해서 IDE가 어떻게 우리의 프로젝트를 빌드하고 있는지 살펴보았고 `-g` 옵션이 우리의 애플리케이션에 어떠한 효과를 가져오고 있었는지도 확인해보았다.
+
+Spring이 기존에 메서드 파라미터의 이름을 어떻게 가져오고 있었는지도 살펴보았다. 그 과정에서 컴파일러의 `-g` 옵션에 의존하고 있던 `LocalVariableTableParameterNameDiscoverer`가 제거되었다는 사실을 확인할 수 있었고 그 대신 `-parameters` 옵션을 사용하면 `StandardReflectionParameterNameDiscoverer`가 메서드 파라미터의 이름을 가져올 수 있다는 것 또한 확인했다.
+
+마지막으로 Gradle이 프로젝트를 빌드할 때 항상 `-parameters` 옵션을 사용하고 있었다는 것을 확인했고 그 덕분에 스프링 6.1 버전에서도 정상적으로 우리의 애플리케이션이 실행될 수 있었다는 것을 알 수 있었다. 그리고 IDE에서 `-parameters` 옵션을 설정하는 방법 또한 살펴보았다.

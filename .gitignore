@@ -191,3 +191,5 @@ yarn-error.log*
 /.idea/sonarlint/securityhotspotstore/f/6/f6258c5b8ef7ae8980c4547dbfe2023283bfa870
 /.idea/sonarlint/securityhotspotstore/f/d/fd9686b571880eaec41a14a5a17c04d83fa5a17b
 /.idea/sonarlint/securityhotspotstore/index.pb
+
+!/data/blog/.obsidian/
