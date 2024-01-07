@@ -595,3 +595,188 @@ public class Member {
     }
 }
 ```
+
+## Kotlin
+Kotlin에서도 위와 상황이 비슷하지만 몇 가지 차이가 발생한다. 아래 엔티티 구현을 살펴보자.
+
+```kotlin
+@Entity
+class Member(val name: String) {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    val id: Long = 0
+}
+```
+
+Kotlin에서는 PK 필드가 Nullable해지는 것을 피하기 위해서 기본 값인 0을 할당해주는 경우가 많다. 이 경우 JPA Buddy가 생성해주는 코드를 그대로 사용할 수는 없고 조금 수정할 필요가 있다.
+
+```kotlin
+final override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (other == null) return false
+    val oEffectiveClass = getEffectiveClass(other)
+    val thisEffectiveClass = getEffectiveClass(this)
+    if (thisEffectiveClass != oEffectiveClass) return false
+    other as Member
+
+    return id != 0L && id == other.id
+}
+
+final override fun hashCode(): Int = getEffectiveClass(this).hashCode()
+
+private fun getEffectiveClass(obj: Any?): Class<*> =
+    if (obj is HibernateProxy) (this as HibernateProxy).hibernateLazyInitializer.persistentClass else this.javaClass
+```
+
+위와 같은 방식으로 수정해 줄 수 있다. 또한 `getEffectiveClass()`의 경우 별도로 분리해 여러 엔티티에서 재사용하는 것 또한 가능하다.
+
+Kotlin에서는 아래와 같이 엔티티의 `equals()` 메소드와 `hashCode()` 메소드를 검증할 수 있다.
+
+```kotlin
+@DataJpaTest
+class JPATest {
+    @Autowired
+    private lateinit var emf: EntityManagerFactory
+
+    @Test
+    fun test() {
+        val member1 = Member("member1")
+        assertEqualityAndHashCode(Member::class, Member::id, member1)
+    }
+
+    private fun <T : Any, U> assertEqualityAndHashCode(kClazz: KClass<T>, getIdFn: Function<T, U>, entity: T) {
+        val clazz = kClazz.java
+        val set: MutableSet<T> = HashSet()
+        set.add(entity)
+        assertTrue(set.contains(entity))
+
+        doInJPA { em ->
+            em.persist(entity)
+            em.flush()
+            assertTrue(set.contains(entity), "Persist 후 Entity를 Set에서 찾을 수 없습니다")
+        }
+
+        assertTrue(set.contains(entity))
+
+        doInJPA { em ->
+            val entityProxy = em.getReference(clazz, getIdFn.apply(entity))
+            assertTrue(entityProxy == entity, "EntityProxy가 Entity와 같지 않습니다")
+        }
+
+        doInJPA { em ->
+            val entityProxy = em.getReference(clazz, getIdFn.apply(entity))
+            assertTrue(entity == entityProxy, "Entity가 EntityProxy와 같지 않습니다")
+        }
+
+        doInJPA { em ->
+            val _entity = em.merge(entity)
+            assertTrue(set.contains(_entity), "Merge 후 Entity를 Set에서 찾을 수 없습니다")
+        }
+
+        doInJPA { em ->
+            val _entity = em.find(clazz, getIdFn.apply(entity))
+            assertTrue(
+                set.contains(_entity),
+                "Entity를 다른 영속성 컨텍스트에 로드 후 Entity를 Set에서 찾을 수 없습니다"
+            )
+        }
+
+        doInJPA { em ->
+            val _entity = em.getReference(clazz, getIdFn.apply(entity))
+            assertTrue(
+                set.contains(_entity),
+                "Entity의 Proxy를 다른 영속성 컨텍스트에 로드 후 Entity를 Set에서 찾을 수 없습니다"
+            )
+        }
+
+        val deletedEntity = doInJPA<T> { em ->
+            val _entity = em.getReference(clazz, getIdFn.apply(entity))
+            em.remove(_entity)
+            _entity
+        }
+        assertTrue(set.contains(deletedEntity), "삭제된 Entity를 Set에서 찾을 수 없습니다")
+    }
+
+    private fun <T> doInJPA(function: Function<EntityManager, T>): T {
+        var result: T
+        var txn: EntityTransaction? = null
+        try {
+            emf.createEntityManager().use { em ->
+                txn = em.transaction
+                txn!!.begin()
+                result = function.apply(em)
+                if (!txn!!.rollbackOnly) {
+                    txn!!.commit()
+                } else {
+                    try {
+                        txn!!.rollback()
+                    } catch (e: Exception) {
+                        logger.error("Rollback failure", e)
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            if (txn?.isActive == true) {
+                try {
+                    txn!!.rollback()
+                } catch (e: Exception) {
+                    logger.error("Rollback failure", e)
+                }
+            }
+            throw t
+        }
+        return result
+    }
+
+    private fun doInJPA(function: Consumer<EntityManager>) {
+        doInJPA<Any?> { em ->
+            function.accept(em)
+            null
+        }
+    }
+
+    companion object {
+        private val logger: Logger = LoggerFactory.getLogger(JPATest::class.java)
+    }
+}
+```
+
+### 결론
+
+- Kotlin에서도 Java와 마찬가지로 `@GeneratedValue`를 사용하는 경우 `equals()` 메소드와 `hashCode()` 메소드를 구현할 때 다음 사항을 신경쓰면 된다.
+  - 공통
+    - 엔티티 클래스를 가져오기 위해서는 현재 객체가 `HibernateProxy`인지 확인하고 `HibernateProxy`라면 `getHibernateLazyInitializer().getPersistentClass()`를 사용한다. 아니라면 `getClass()`를 사용한다.
+  - `equals()` 메소드
+    - 만약 비교하려는 두 객체가 영속화되지 않은 경우 `==` 관계일 때만 `true`를 반환하고, 그 외에는 항상 `false`를 반환한다.
+    - 타입이 같은 두 객체를 비교할 때 ID 필드가 항상 null이 아니므로 null 비교 대신 0과 비교한다.
+    - 두 객체를 비교할 때 상속 관계에서 문제를 일으키지 않도록 `instance of` 대신 `getClass()`를 사용한다.
+  - `hashCode()` 메소드
+    - `@GeneratedValue`를 사용하는 경우 해당 값을 `hashCode()` 구현에 사용해서는 안 된다. 처음 객체를 영속화하면 PK 값이 설정되고, 이는 `hashCode()`의 결과를 변경시킨다. 이는 해시 기반 컬렉션에서 문제를 일으킬 수 있다.
+    - `hashCode()` 구현에서 상수를 반환해서는 안 된다. 모든 엔티티 클래스의 `hashCode()` 값이 같아지므로 해시 기반 컬렉션에서 성능 문제를 일으킬 수 있다.
+
+그리고 아래와 같은 구현을 사용하면 된다.
+
+```kotlin
+@Entity
+class Member(val name: String) {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    val id: Long = 0
+
+    final override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other == null) return false
+        val oEffectiveClass = getEffectiveClass(other)
+        val thisEffectiveClass = getEffectiveClass(this)
+        if (thisEffectiveClass != oEffectiveClass) return false
+        other as Member
+
+        return id != 0L && id == other.id
+    }
+
+    final override fun hashCode(): Int = getEffectiveClass(this).hashCode()
+
+    private fun getEffectiveClass(obj: Any?): Class<*> =
+        if (obj is HibernateProxy) (this as HibernateProxy).hibernateLazyInitializer.persistentClass else this.javaClass
+}
+```
