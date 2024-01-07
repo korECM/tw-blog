@@ -1,0 +1,513 @@
+---
+title: 'JPA Buddy가 생성해주는 equals() 메소드와 hashCode() 메소드 살펴보기'
+date: 2024-01-06T22:00:00Z
+lastmod: '2024-01-01'
+tags: ['Spring Boot', 'JPA']
+draft: false
+summary: '추가 예정'
+images: ['/static/images/og/수정 예정.png']
+layout: PostLayout
+---
+
+<TOCInline toc={props.toc} toHeading={4} />
+
+## JPA Buddy
+JPA Buddy는 IntelliJ IDEA의 플러그인으로, 개발자가 JPA를 사용할 때 여러모로 도움을 주는 플러그인이다. Entity를 바탕으로 Spring Data Repository나 DTO를 손쉽게 생성해준다거나, Repository의 Query 메소드를 쉽게 생성할 수 있게 해주는 등의 다양한 편의 기능들을 제공한다. 자세한 내용은 [공식 홈페이지](https://jpa-buddy.com/)나 [공식 유튜브](https://www.youtube.com/@JPABuddy)에서 확인해볼 수 있다.
+
+이 글에서 살펴볼 기능은 JPA Buddy가 Entity의 `equals()` 메소드와 `hashCode()` 메소드를 자동으로 생성해주는 기능이다. JPA Buddy는 [블로그](https://jpa-buddy.com/blog/)에 JPA에 대한 여러 유용한 팁들을 올리고 있는데, 그 중 [이 글](https://jpa-buddy.com/blog/hopefully-the-final-article-about-equals-and-hashcode-for-jpa-entities-with-db-generated-ids/)에서는 JPA Entity의 `equals()` 메소드와 `hashCode()` 메소드를 구현하는 방법은 어떤 것들이 있었는지, 결과적으로 자신들이 택한 방법은 무엇인지를 이야기하고 있다.
+이 글에서는 결과적으로 JPA Buddy가 생성하는 코드를 살펴보며 왜 이러한 선택을 했는지, 주의해야 할 점은 없는지 등을 살펴보려 한다.
+
+## Java의 equals() 메소드와 hashCode() 메소드
+Java의 `equals()` 메소드와 `hashCode()` 메소드에는 몇 가지 지켜야 하는 규칙이 있다. 이는 `Object` 객체의 [equals()](https://docs.oracle.com/javase/10/docs/api/java/lang/Object.html#equals(java.lang.Object)) 메소드와 [hashCode()](https://docs.oracle.com/javase/10/docs/api/java/lang/Object.html#hashCode()) 메소드의 Javadoc을 살펴보면 알 수 있고 이를 정리하면 다음과 같다.
+
+- `equals()` 메소드
+- 자기 자신에 대해서 `true` 반환
+- `x`가 null이 아닐 때 `x.equals(null)`은 `false` 반환
+- `x`, `y`가 null이 아닐 때 `x.equals(y)`가 `true`라면 `y.equals(x)`도 `true`
+- `x`', `y`, `z`가 null이 아닐 때 `x.equals(y)`가 `true`이고 `y.equals(z)`가 `true`라면 `x.equals(z)`도 `true`
+- `x`, `y`가 null이 아닐 때 `equals()`에 사용되는 정보가 변경되지 않는 한 여러 번 호출하더라도 항상 같은 값을 반환
+- `x`, `y`가 null이 아닐 때 `x == y`라면 `x.equals(y)`는 `true`
+- `hashCode()` 메소드
+- `equals()`에 사용되는 정보가 변경되지 않는 한 `hashCode()` 메소드를 여러 번 호출하더라도 항상 같은 값을 반환
+- `x.equals(y)`가 `true`라면 `x.hashCode()`와 `y.hashCode()` 같아야 한다
+- `x.equals(y)`가 `false`라면 `x.hashCode()`와 `y.hashCode()`가 같을 수도 다를 수도 있다
+- 단, 다른 값을 반환하는 것이 해시 테이블의 성능에 도움이 된다
+
+또한 `Set` 인터페이스의 [JavaDoc](https://docs.oracle.com/javase/10/docs/api/java/util/Set.html#equals(java.lang.Object))을 살펴보면 다음 내용도 확인할 수 있다.
+
+> Set의 요소로 사용된 객체가 값이 변경되어 `equals()` 메소드에 영향을 주었을 떄의 Set의 동작은 정의되지 않았다
+
+## JPA의 equals() 메소드와 hashCode() 메소드
+JPA는 영속 상태라는 개념이 존재하기 때문에 상황이 조금 더 복잡해진다. 한 엔티티에 대해서 엔티티가 변경되지 않았다면, 모든 영속 상태 간 변경에 있어서 `equals()` 메소드와 `hashCode()`의 결과가 일관되어야 하기 때문이다.
+
+이러한 규칙은 `HashSet`과 같은 컬렉션을 사용하면 쉽게 검증할 수 있는데, 이를 이용해 추가적으로 고려해야 하는 내용을 정리하면 아래와 같다.
+
+- null이 아닌 엔티티 `x`가 존재하고 `HashSet` `y`에 `x`가 존재한다면
+- `x`가 `Transient` 상태라도 `y.contains(x)`는 `true`를 반환
+- `x`를 `persist` 한 뒤에도 `y.contains(x)`는 `true`를 반환
+- `x`를 `merge`한 결과가 `z`라고 할 때 `y.contains(z)`는 `true`를 반환
+- `x`의 `Proxy` 객체를 `z`라고 할 때 `y.contains(z)`는 `true`를 반환
+- `x`를 `remove`한 뒤에도 `y.contains(x)`는 `true`를 반환
+- `x`의 `Proxy` 객체를 `z`라고 할 때 `x.equals(z)`, `z.equals(x)` 모두 `true`를 반환
+
+이러한 조건은 아래와 같은 코드로 검증할 수 있다.
+
+```java
+@DataJpaTest
+class JPATest {
+    private static final Logger logger = LoggerFactory.getLogger(JPATest.class);
+
+    @Autowired
+    EntityManagerFactory emf;
+}
+```
+`EntityManagerFactory`를 사용하기 위해서 `@DataJpaTest`를 사용했다. 여러 영속 상태에서 편하게 메소드를 검증하기 위해서 `doInJPA()`라는 메소드를 추가로 정의한다.
+
+```java
+private <T> T doInJPA(Function<EntityManager, T> function) {
+    T result;
+    EntityTransaction txn = null;
+    try (EntityManager em = emf.createEntityManager()) {
+        txn = em.getTransaction();
+        txn.begin();
+        result = function.apply(em);
+        if (!txn.getRollbackOnly()) {
+            txn.commit();
+        } else {
+            try {
+                txn.rollback();
+            } catch (Exception e) {
+                logger.error("Rollback failure", e);
+            }
+        }
+    } catch (Throwable t) {
+        if (txn != null && txn.isActive()) {
+            try {
+                txn.rollback();
+            } catch (Exception e) {
+                logger.error("Rollback failure", e);
+            }
+        }
+        throw t;
+    }
+    return result;
+}
+
+private void doInJPA(Consumer<EntityManager> function) {
+    doInJPA(em -> {
+        function.accept(em);
+        return null;
+    });
+}
+```
+
+`doInJPA()` 메소드는 안에서 영속성 컨텍스트를 만든 뒤 전달 받은 람다 함수를 실행하고 영속성 컨텍스트르 닫는 메소드다. 이 메소드를 이용하면 엔티티를 편하게 다루면서, 영속성 컨텍스트가 달라지는 상황도 검증할 수 있다.
+
+```java
+private <T, U> void assertEqualityAndHashCode(Class<T> clazz, Function<T, U> getIdFn, T entity) {
+    Set<T> set = new HashSet<>();
+        set.add(entity);
+        assertTrue(set.contains(entity));
+
+        doInJPA(em -> {
+            em.persist(entity);
+            em.flush();
+            assertTrue(set.contains(entity), "Persist 후 Entity를 Set에서 찾을 수 없습니다");
+        });
+
+        assertTrue(set.contains(entity));
+
+        doInJPA(em -> {
+            T entityProxy = em.getReference(clazz, getIdFn.apply(entity));
+            assertTrue(entityProxy.equals(entity), "EntityProxy가 Entity와 같지 않습니다");
+        });
+
+        doInJPA(em -> {
+            T entityProxy = em.getReference(clazz, getIdFn.apply(entity));
+            assertTrue(entity.equals(entityProxy), "Entity가 EntityProxy와 같지 않습니다");
+        });
+
+        doInJPA(em -> {
+            T _entity = em.merge(entity);
+            assertTrue(set.contains(_entity), "Merge 후 Entity를 Set에서 찾을 수 없습니다");
+        });
+
+        doInJPA(em -> {
+            T _entity = em.find(clazz, getIdFn.apply(entity));
+            assertTrue(set.contains(_entity), "Entity를 다른 영속성 컨텍스트에 로드 후 Entity를 Set에서 찾을 수 없습니다");
+        });
+
+        doInJPA(em -> {
+            T _entity = em.getReference(clazz, getIdFn.apply(entity));
+            assertTrue(set.contains(_entity), "Entity의 Proxy를 다른 영속성 컨텍스트에 로드 후 Entity를 Set에서 찾을 수 없습니다");
+        });
+
+        T deletedEntity = doInJPA(em -> {
+            T _entity = em.getReference(clazz, getIdFn.apply(entity));
+            em.remove(_entity);
+            return _entity;
+        });
+        assertTrue(set.contains(deletedEntity), "삭제된 Entity를 Set에서 찾을 수 없습니다");
+    }
+```
+
+`assertEqualityAndHashCode()` 메소드는 한 엔티티의 `equals()` 메소드와 `hashCode()` 메소드를 검증하는 메소드다. 전달 받은 엔티티가 위에서 언급한 규칙을 지키는지 확인하기 위해서 `Set`에 엔티티를 담아두고, 영속 상태가 변하는 상황에도 여전히 `Set`에서 엔티티를 찾을 수 있는지를 검증한다.
+
+```java
+@Test
+void test() {
+    Member member1 = new Member("member1");
+    assertEqualityAndHashCode(Member.class, Member::getId, member1);
+}
+```
+
+이렇게 메소드를 만들고 나면 위와 같이 테스트 코드를 작성해서 검증할 수 있다.
+
+전체 코드는 아래와 같다.
+
+```java
+@DataJpaTest
+class JPATest {
+    private static final Logger logger = LoggerFactory.getLogger(JPATest.class);
+
+    @Autowired
+    EntityManagerFactory emf;
+
+    @Test
+    void test() {
+        Member member1 = new Member("member1");
+        assertEqualityAndHashCode(Member.class, Member::getId, member1);
+    }
+
+    private <T, U> void assertEqualityAndHashCode(Class<T> clazz, Function<T, U> getIdFn, T entity) {
+        Set<T> set = new HashSet<>();
+        set.add(entity);
+        assertTrue(set.contains(entity));
+
+        doInJPA(em -> {
+            em.persist(entity);
+            em.flush();
+            assertTrue(set.contains(entity), "Persist 후 Entity를 Set에서 찾을 수 없습니다");
+        });
+
+        assertTrue(set.contains(entity));
+
+        doInJPA(em -> {
+            T entityProxy = em.getReference(clazz, getIdFn.apply(entity));
+            assertTrue(entityProxy.equals(entity), "EntityProxy가 Entity와 같지 않습니다");
+        });
+
+        doInJPA(em -> {
+            T entityProxy = em.getReference(clazz, getIdFn.apply(entity));
+            assertTrue(entity.equals(entityProxy), "Entity가 EntityProxy와 같지 않습니다");
+        });
+
+        doInJPA(em -> {
+            T _entity = em.merge(entity);
+            assertTrue(set.contains(_entity), "Merge 후 Entity를 Set에서 찾을 수 없습니다");
+        });
+
+        doInJPA(em -> {
+            T _entity = em.find(clazz, getIdFn.apply(entity));
+            assertTrue(set.contains(_entity), "Entity를 다른 영속성 컨텍스트에 로드 후 Entity를 Set에서 찾을 수 없습니다");
+        });
+
+        doInJPA(em -> {
+            T _entity = em.getReference(clazz, getIdFn.apply(entity));
+            assertTrue(set.contains(_entity), "Entity의 Proxy를 다른 영속성 컨텍스트에 로드 후 Entity를 Set에서 찾을 수 없습니다");
+        });
+
+        T deletedEntity = doInJPA(em -> {
+            T _entity = em.getReference(clazz, getIdFn.apply(entity));
+            em.remove(_entity);
+            return _entity;
+        });
+        assertTrue(set.contains(deletedEntity), "삭제된 Entity를 Set에서 찾을 수 없습니다");
+    }
+
+    private <T> T doInJPA(Function<EntityManager, T> function) {
+        T result;
+        EntityTransaction txn = null;
+        try (EntityManager em = emf.createEntityManager()) {
+            txn = em.getTransaction();
+            txn.begin();
+            result = function.apply(em);
+            if (!txn.getRollbackOnly()) {
+                txn.commit();
+            } else {
+                try {
+                    txn.rollback();
+                } catch (Exception e) {
+                    logger.error("Rollback failure", e);
+                }
+            }
+        } catch (Throwable t) {
+            if (txn != null && txn.isActive()) {
+                try {
+                    txn.rollback();
+                } catch (Exception e) {
+                    logger.error("Rollback failure", e);
+                }
+            }
+            throw t;
+        }
+        return result;
+    }
+
+    private void doInJPA(Consumer<EntityManager> function) {
+        doInJPA(em -> {
+            function.accept(em);
+            return null;
+        });
+    }
+}
+```
+
+## Java
+위에서 정의한 메소드를 사용해서 JPA Buddy의 `equals()` 메소드와 `hashCode()` 메소드를 검증해보자.
+
+```java
+@NoArgsConstructor(access = PROTECTED)
+@Getter
+@Entity
+public class Member {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+
+    public Member(String name) {
+        this.name = name;
+    }
+}
+```
+
+먼저, `Object`의 기본 `equals()` 메소드와 `hashCode()` 메소드를 사용하는 경우에 문제가 발생하는지 확인해보자.
+위 엔티티를 가지고 그대로 테스트를 돌리면 다음과 같이 실패한다.
+
+![](/static/images/jpa-equals-and-history/jpa-equals-and-history-1704598683725.png)
+
+```java
+doInJPA(em -> {
+    T entityProxy = em.getReference(clazz, getIdFn.apply(entity));
+    assertTrue(entityProxy.equals(entity), "EntityProxy가 Entity와 같지 않습니다");
+});
+```
+
+위 검증에서 실패하는 것을 알 수 있다. JPA는 엔티티를 지연 로딩 하기 위해서 엔티티 객체를 상속 받은 Proxy 객체를 사용한다. 따라서 원본 엔티티 객체와 타입도 같지 않고, `==` 관계도 성립하지 않기 때문에 당연히 실패한다.
+
+### JPA Buddy
+IntelliJ에서 JPA Buddy 플러그인을 설치했다면, 다음과 같이 `equals()` 메소드와 `hashCode()` 메소드를 생성할 수 있다.
+
+![](/static/images/jpa-equals-and-history/jpa-equals-and-history-1704598999533.png)
+![](/static/images/jpa-equals-and-history/jpa-equals-and-history-1704599108767.png)
+
+Generate 기능(⌘ + N (macOS) / Alt+Insert (Windows/Linux))을 사용하면 위와 같은 창이 뜬다. 여기에서 **Utilities Equals and HashCode**를 선택하면 아래와 같은 코드가 생성된다.
+
+
+JPA Buddy가 생성해주는 `equals()` 메소드와 `hashCode()` 메소드는 다음과 같다.
+
+```java
+@NoArgsConstructor(access = PROTECTED)
+@Getter
+@Entity
+public class Member {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+
+    public Member(String name) {
+        this.name = name;
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        Member member = (Member) o;
+        return getId() != null && Objects.equals(getId(), member.getId());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
+    }
+}
+```
+JPA Buddy가 생성해주는 `equals()` 메소드와 `hashCode()` 메소드를 살펴보기 전에, 해당 테스트를 통과하는지부터 살펴보자.
+
+![](/static/images/jpa-equals-and-history/jpa-equals-and-history-1704599261490.png)
+
+테스트가 잘 통과하는 것을 확인할 수 있다.
+
+### JPA Buddy가 생성해준 메소드 살펴보기
+```java
+@Override
+public final boolean equals(Object o) {
+    if (this == o) return true;
+    if (o == null) return false;
+    Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+    Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+    if (thisEffectiveClass != oEffectiveClass) return false;
+    Member member = (Member) o;
+    return getId() != null && Objects.equals(getId(), member.getId());
+}
+
+@Override
+public final int hashCode() {
+    return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
+}
+```
+
+우선, 두 메소드 모두 `final` 키워드가 붙어있는 것을 알 수 있다. Hibernate에서는 PK를 가져오는 메소드를 제외하고 `final` 키워드가 붙어있지 않은 메소드를 호출할 때마다 Proxy를 초기화한다. 따라서 JPA Buddy는 `final` 키워드를 붙여 `equals()` 메소드와 `hashCode()` 메소드를 호출해도 프록시가 초기화되지 않도록 했다.
+
+복잡한 `equals()` 메소드 전에 간단한 `hashCode()` 메소드부터 살펴보자.
+
+```java
+public final int hashCode() {
+    return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
+}
+```
+위 코드를 간단하게 정리하면 다음과 같다.
+
+```java
+public final int hashCode() {
+    Class<?> clazz = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : getClass();
+    return clazz.hashCode();
+}
+```
+
+1. `this`가 `HibernateProxy`인지에 따라서 적절하게 `Class` 객체를 얻는다.
+2. `Class` 객체의 `hashCode()` 메소드를 호출해서 반환한다.
+
+앞에서 말했던 것처럼 JPA는 지연 로딩하기 위해서 원본 엔티티 객체를 상속 받은 Proxy 객체를 사용한다. Hibernate의 Proxy 객체는 엔티티 객체를 상속받는 것뿐만 아니라 내부적으로 `HibernateProxy`라는 인터페이스를 구현하고 있다. 따라서 `this`가 `HibernateProxy`인지를 확인해서 `HibernateProxy`라면 `getHibernateLazyInitializer().getPersistentClass()`를 호출해서 원본 엔티티 객체의 `Class` 객체를 얻어낸다. 그렇지 않다면 `getClass()`를 호출해서 `Class` 객체를 얻어낸다.
+
+Hibernate 6 버전 전에는 `HibernateProxyHelper` 클래스의 `getClassWithoutInitializingProxy()` 메소드를 사용해서 엔티티를 DB에서 조회하지 않고 엔티티의 클래스를 얻어올 수 있었지만 Hibernate 6 버전부터는 `HibernateProxy.getHibernateLazyInitializer().getPersistentClass()`를 사용해야 한다.
+
+JPA의 지연 로딩과 프록시 객체 때문에 상황에 맞게 원본 엔티티 클래스를 가져온다는 것을 방금 살펴봤다. 복잡해 보이지만 결국 `Class<Member>`를 얻어내는 과정이다. 그렇다면 왜 `Class` 객체의 `hashCode()`를 사용할까? PK를 `hashCode()`에 사용하지 않는 이유는 무엇일까? 이는 처음에 Java의 `Set` 인터페이스의 Javadoc에서 언급한 내용과 관련이 있다.
+
+> Set의 요소로 사용된 객체가 값이 변경되어 `equals()` 메소드에 영향을 주었을 떄의 Set의 동작은 정의되지 않았다
+
+JPA에서 객체를 저장할 때는 `EntityManager`의 `persist()` 메소드를 사용한다. `@GeneratedValue`를 사용하는 경우 해당 메소드는 엔티티를 DB에 저장한 후 받아온 PK를 `@Id` 필드에 저장한다. 즉, `persist()` 메소드를 호출함으로써 엔티티의 PK 필드 값이 변경(설정)된다.
+
+만약, `hashCode()`에 PK를 사용한다면 `persist()` 메소드를 호출하면서 `hashCode()`의 결과가 변경되고, 이는 해시 기반 컬렉션에 문제를 일으킬 수 있다.
+
+```java
+@Override
+public final int hashCode() {
+    return Objects.hashCode(getId());
+}
+```
+따라서 `@GeneratedValue`를 사용하는 경우 위와 같이 `hashCode()` 메소드를 구현하면 안된다.
+
+![](/static/images/jpa-equals-and-history/jpa-equals-and-history-1704601845558.png)
+
+테스트를 돌려보아도 아래와 같이 실패한다. Entity를 `persist()` 하고 나면 `hashCode()`의 결과가 변경되고, 그에 따라 내부의 해시 테이블에서 해당 객체를 찾을 수 없기 때문에 실패한다.
+
+따라서 JPA Buddy는 `hashCode()`에 PK를 사용하지 않고 `Class` 객체의 `hashCode()`를 사용한다.
+
+> `Class` 객체의 `hashCode()`를 사용하면 같은 엔티티끼리는 같은 `hashCode()`를 가지게 되는데 이 부분이 문제가 되지는 않을까?
+
+이런 구현을 보게 되면 위와 같은 의문이 들 수 있다. 다른 객체끼리는 `hashCode()`의 결과가 달라야 해시 기반 컬렉션이 그만한 성능을 낼 수 있는데 이 부분이 문제가 되지는 않을까?
+
+같은 클래스끼리 `hashCode()`의 값이 같다고 하더라도 해시 기반 컬렉션에 담기는 객체의 수가 많지 않다면 성능에 큰 영향을 미치지는 않는다. 다른 [블로그](https://vladmihalcea.com/how-to-implement-equals-and-hashcode-using-the-jpa-entity-identifier/)의 벤치마크 결과를 가져와보면 아래와 같다.
+
+| Collection size | Count duration [milliseconds] |
+|:---------------:|:-----------------------------:|
+|       250       |             0.006             |
+|      1,000      |             0.069             |
+|      5,000      |             0.092             |
+|     10,000      |             0.25              |
+|     25,000      |             0.49              |
+|     50,000      |             0.862             |
+
+컬렉션에 담긴 객체 수가 5,000개를 넘어가지 않는다면 성능 하락이 크지 않은 것을 확인할 수 있다. 잘 생각해보면 JPA에서 몇 천개의 엔티티를 해시 기반 컬렉션에 담을 일은 거의 없다. 그 정도 수의 객체를 불러와야 한다면 애플리케이션의 메모리 문제도 생길 것이고, DB에서 불러오는 데도 꽤 많은 시간이 소요될 것이다. 따라서 그정도의 숫자가 에상된다면 페이지네이션을 적용해야 할 것이고,`@OneToMany` 같은 연관 관계를 사용하지 말아야 할 것이다.
+
+즉, 일반적인 OLTP 환경이라면 수 천개의 엔티티 객체를 담는 해시 기반 컬렉션을 사용할 일도 없고, 있다면 해시 기반 컬렉션의 성능을 걱정할 것이 아니라 수 천개의 엔티티 객체를 한 번에 불러오는 것을 걱정해야 한다. 따라서 `Class` 객체의 `hashCode()`를 사용하는 것은 큰 문제가 되지 않는다.
+
+간혹 `hashCode()` 메소드가 상수를 반환하도록 하는 경우도 있는데 이 또한 동작에는 문제가 없지만 모든 엔티티 클래스의 `hashCode()` 값이 같아지므로 위 구현보다 추가적인 성능 문제가 생길 수도 있다. 이 차이가 크지는 않겠지만 `Class` 객체의 `hashCode()`를 사용하는 것이 어려운 일이 아니니 되도록이면 `Class` 객체의 `hashCode()`를 사용하자.
+
+다음엔 `equals()` 메소드를 살펴보자.
+
+```java
+public final boolean equals(Object o) {
+    // 1
+    if (this == o) return true;
+    if (o == null) return false;
+
+    // 2
+    Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+    Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+    if (thisEffectiveClass != oEffectiveClass) return false;
+
+    // 3
+    Member member = (Member) o;
+    return getId() != null && Objects.equals(getId(), member.getId());
+}
+```
+
+위 메소드는 크게 3가지 부분으로 나눠서 생각할 수 있다.
+
+1. `this`와 `o`가 같은 객체(`==`)라면 `true`를 반환한다. 만약 `o`가 `null`이라면 `false`를 반환한다.
+2. `Proxy` 여부에 따라서 적절하게 원본 엔티티 클래스를 가져온다. `this`와 `o`의 클래스가 다르다면 `false`를 반환한다.
+3. 만약 영속화된 엔티티와 영속화되지 않은 엔티티 간의 비교라면 `false`를 반환한다. 둘 다 영속화되어 PK를 가지고 있다면 PK가 같은지 비교해서 `true`나 `false`를 반환한다.
+
+1번 과정의 경우 쉽게 이해할 수 있다. 실제 메모리 상의 같은 객체라면 다른 조건을 비교할 필요가 없기에 `true`를 반환하고, `null`이어도 다른 조건을 비교할 필요가 없기에 `false`를 반환한다.
+
+2번 과정의 경우 생각해볼 여지가 조금 있다. 우선 `hashCode()` 구현에서 살펴본 것처럼 Proxy 여부에 따라서 원본 엔티티의 `Class` 객체를 가져오는 것을 알 수 있다. 그렇게 가져온 클래스가 다르다면 다른 타입이므로 `false`를 반환하는 것도 이해할 수 있다. 그런데 다음과 같은 의문을 가져볼 수도 있다.
+
+> 왜 `instance of`를 사용하지 않고 `getClass()`를 사용하는 것일까?
+
+`instance of`는 엔티티가 상속 관계에 있는 경우 실제 엔티티는 다르지만, 부모 타입으로 비교하게 된다거나 부모 클래스에 `equals()` 메소드 구현이 존재하는 경우 문제가 발생할 수 있다. 하지만 `getClass()`는 상속 관계에 무관하게 항상 실제 구체 클래스 타입을 반환하기 때문에 정확히 클래스가 일치하는지를 비교할 수 있다.
+이러한 문제 때문에 JPA 엔티티에서 `equals()` 메소드를 구현할 때는 `instance of`를 사용하지 않고 `getClass()`를 사용하는 것이 좋다.
+
+> 왜 PK가 `null`이라면 `false`를 반환하는 것일까? 영속화되지 않은 두 객체가 사실 같은 객체라면 `true`를 반환해야 하는 것이 아닐까?
+
+만약 엔티티에 비즈니스 키가 존재하고, 이를 `equals()` 메소드에서 사용할 수 있다면 영속화되지 않은 객체끼리 비교가 가능하다. 하지만 비즈니스 키가 아니라 `@GeneratedValue`와 같이 DB에서 생성되는 PK를 사용한다면 영속화되지 않은 객체끼리 비교할 수 있는 방법은 `==` 연산자를 사용하는 것 뿐이다.
+
+따라서 만약 두 객체가 메모리 상의 같은 객체를 가리키고 있는 경우(`==`) `true`를 반환한다. 하지만 메모리 상에서 두 객체가 같지 않고, 둘 중 한 객체의 PK가 null이라면 두 객체가 같지 않은 것이 자명하므로 `false`를 반환한다.
+
+> 왜 필드에 직접 접근하지 않고 `get()` ~~
+
+### 결론
+Java에서 `@GeneratedValue`를 사용하는 경우 아래와 같은 구현을 사용하면 된다.
+
+```java
+@NoArgsConstructor(access = PROTECTED)
+@Getter
+@Entity
+public class Member {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+
+    public Member(String name) {
+        this.name = name;
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        Member member = (Member) o;
+        return getId() != null && Objects.equals(getId(), member.getId());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
+    }
+}
+```
+
